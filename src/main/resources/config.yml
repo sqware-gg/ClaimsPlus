@@ -1,0 +1,121 @@
+# ClaimsPlus
+# Used for update checks.
+# Do not change unless you know what you are doing.
+config-version: 8
+
+claims:
+  # Placing this block creates a claim.
+  claim-block: EMERALD_BLOCK
+
+  # The protected square width and length. A value of 32 protects a 32x32 column.
+  size: 32
+
+  # -1 means unlimited claims per player.
+  max-claims-per-player: -1
+
+  # Prevents new emerald block claims from overlapping existing claims.
+  prevent-overlap: true
+
+  # Worlds listed here cannot create claims and are not protected by this plugin.
+  disabled-worlds: []
+
+storage:
+  # How often claims are persisted to claims.yml.
+  save-interval-seconds: 300
+
+  # Saves immediately after claim creation, deletion, and trust changes.
+  save-on-change: true
+
+trust:
+  # When false, /trust only accepts online players or players who have joined before.
+  allow-unknown-players: false
+
+protection:
+  blocks: true
+  containers: true
+  entities: true
+  explosions: true
+  pistons: true
+  fluids: true
+  hoppers: true
+  fire: true
+
+visual-border:
+  # Sends temporary fake blocks to the player after they create a claim.
+  # This does not place real blocks in the world.
+  enabled: true
+
+  # Examples: GLOWSTONE, GLASS, LIME_STAINED_GLASS, SEA_LANTERN.
+  material: GLOWSTONE
+
+  duration-seconds: 8
+
+  # Relative to the emerald block Y level. 1 draws the border just above the claim block height.
+  height-offset: 1
+
+  # Vertical fake-block layers to draw. Keep this low; 1 or 2 is usually enough.
+  layers: 1
+
+feedback:
+  # Prevents chat/sound spam when a player repeatedly tries blocked actions.
+  protected-cooldown-millis: 1200
+
+  sounds:
+    enabled: true
+
+    # Applied to all ClaimsPlus sounds.
+    volume: 0.65
+    pitch: 1.0
+
+    # Set any sound to "none" to disable that category.
+    success: entity.experience_orb.pickup
+    error: block.note_block.bass
+    protected: entity.villager.no
+    claim-created: entity.player.levelup
+    claim-removed: block.beacon.deactivate
+    trust: entity.experience_orb.pickup
+    border: block.amethyst_block.chime
+
+messages:
+  prefix: "&#2ECC71Claims &8> &7"
+  no-permission: "&#ED4245No permission."
+  players-only: "&#ED4245Only players can use that."
+  usage-trust: "&7Usage: &#2ECC71/trust <player> &8- &7build trust."
+  usage-untrust: "&7Usage: &#2ECC71/untrust <player> &8- &7remove all trust."
+  usage-access-trust: "&7Usage: &#2ECC71/accesstrust <player> &8- &7doors, buttons, levers, beds."
+  usage-container-trust: "&7Usage: &#2ECC71/containertrust <player> &8- &7containers, animals, villagers, vehicles."
+  usage-permission-trust: "&7Usage: &#2ECC71/permissiontrust <player> &8- &7lets them manage trust."
+  trust-help: "&#2ECC71Trust levels\n&f/accesstrust <player|public> &8- &7Doors, buttons, levers, beds.\n&f/containertrust <player|public> &8- &7Containers, animals, villagers, vehicles.\n&f/trust <player|public> &8- &7Build access; also includes container and access.\n&f/permissiontrust <player> &8- &7Lets that player manage trust.\n&f/untrust <player|public> &8- &7Removes all trust for that target."
+  usage-claims: "&#2ECC71Claims commands\n&f/claims &8- &7List your claims.\n&f/claims info &8- &7Show claim info where you stand.\n&f/claims show &8- &7Show the claim border.\n&f/claims status &8- &7Admin status.\n&f/claims deletehere &8- &7Admin delete current claim.\n&f/claims delete <id> &8- &7Admin delete by id.\n&f/claims reload &8- &7Reload config and data.\n&f/claims save &8- &7Save claim data."
+  usage-claimshow: "&7Usage: &#2ECC71/claimshow"
+  player-not-found: "&#ED4245That player is not online and has not joined before."
+  not-in-claim: "&#ED4245You are not standing in a claim."
+  not-claim-owner: "&#ED4245Only the claim owner can do that."
+  trusted-self: "&#ED4245You already own this claim."
+  public-permission-trust-disabled: "&#ED4245Permission trust cannot be granted to public."
+  trusted: "&f{player} &7now has &f{type} &7trust in this claim &8(&7{type-description}&8)&7."
+  trusted-target: "&f{source} &7gave you &f{type} &7trust in &f{owner}&7's claim &8(&7{type-description}&8)&7."
+  already-trusted: "&f{player} &7already has &f{type} &7trust in this claim."
+  untrusted: "&f{player} &7is no longer trusted in this claim."
+  untrusted-target: "&f{source} &7removed your trust from &f{owner}&7's claim."
+  not-trusted: "&f{player} &7is not trusted in this claim."
+  trust-list-empty: "&7No players are trusted in this claim."
+  trust-list: "&7Build: &f{build-trusted}\n&7Container: &f{container-trusted}\n&7Access: &f{access-trusted}\n&7Permission: &f{permission-trusted}"
+  protected: "&#ED4245This area is claimed by &f{owner}&#ED4245."
+  anchor-owner-only: "&#ED4245Only the claim owner can break the emerald claim block."
+  claim-created: "&7Claim created at &f{x}&7, &f{z}&7. Protected area: &f{min-x}&7..&f{max-x}&7, &f{min-z}&7..&f{max-z}&7."
+  claim-removed: "&7Claim removed. This land is no longer protected."
+  claim-overlaps: "&#ED4245That emerald block would overlap an existing claim owned by &f{owner}&#ED4245."
+  claim-not-found: "&#ED4245No claim found with id &f{id}&#ED4245."
+  claim-limit: "&#ED4245You have reached your claim limit of &f{limit}&#ED4245."
+  claims-disabled-world: "&#ED4245Claims are disabled in this world."
+  claim-block-required: "&#ED4245Only emerald blocks can create claims."
+  info-unclaimed: "&7This location is unclaimed."
+  info-claimed: "&7Claim &f{id}&7. Owner: &f{owner}&7. Bounds: &f{min-x}&7..&f{max-x}&7, &f{min-z}&7..&f{max-z}&7. Trusted: &f{trusted-count}&7."
+  claim-border-shown: "&7Showing claim border for &f{owner}&7."
+  claims-empty: "&7You do not own any claims."
+  claims-header: "&7Your claims: &f{count}"
+  claims-line: "&8- &f{world} &7at &f{x}&7, &f{z} &8(&7{min-x}..{max-x}, {min-z}..{max-z}&8)"
+  status: "&7Version &f{version}&7. Claims: &f{claims}&7. Claim size: &f{size}x{size}&7."
+  saved: "&7Claims data saved."
+  reloaded: "&#57F287ClaimsPlus reloaded."

@@ -1,0 +1,76 @@
+name: ClaimsPlus
+version: 0.1.0
+main: dev.claimsplus.ClaimsPlusPlugin
+api-version: '26.1.2'
+author: SQWARE / Conflict
+website: https://sqware.gg
+description: Emerald block land claiming and protection for Paper servers.
+commands:
+  trust:
+    description: Give build trust. Includes container and access trust.
+    usage: /trust <player>
+  accesstrust:
+    description: Give access trust for doors, buttons, levers, and beds.
+    usage: /accesstrust <player>
+    aliases:
+      - at
+  containertrust:
+    description: Give container trust for inventories, animals, villagers, and vehicles.
+    usage: /containertrust <player>
+    aliases:
+      - ct
+  permissiontrust:
+    description: Let a player manage trust in the claim.
+    usage: /permissiontrust <player>
+    aliases:
+      - pt
+  untrust:
+    description: Remove all of a player's trust from the claim you are standing in.
+    usage: /untrust <player>
+  trustlist:
+    description: View trusted players in the claim you are standing in.
+    usage: /trustlist
+  claiminfo:
+    description: View claim information for your current location.
+    usage: /claiminfo
+  claimshow:
+    description: Temporarily show the border for the claim you are standing in.
+    usage: /claimshow
+    aliases:
+      - claimborder
+      - showclaim
+  claims:
+    description: View and manage claims.
+    usage: /claims [list|info|show|status|deletehere|delete|reload|save]
+    aliases:
+      - claim
+permissions:
+  claimsplus.create:
+    description: Allows creating claims by placing the configured claim block.
+    default: true
+  claimsplus.trust:
+    description: Allows managing trust in owned claims.
+    default: true
+  claimsplus.info:
+    description: Allows using claim info and listing own claims.
+    default: true
+  claimsplus.admin:
+    description: Allows administrative ClaimsPlus commands.
+    default: op
+    children:
+      claimsplus.reload: true
+      claimsplus.save: true
+      claimsplus.delete: true
+      claimsplus.bypass: true
+  claimsplus.reload:
+    description: Allows reloading ClaimsPlus.
+    default: op
+  claimsplus.save:
+    description: Allows saving ClaimsPlus data.
+    default: op
+  claimsplus.delete:
+    description: Allows deleting claims by location or id.
+    default: op
+  claimsplus.bypass:
+    description: Allows bypassing claim protection and owner-only anchor removal.
+    default: op
