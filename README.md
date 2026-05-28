@@ -1,6 +1,6 @@
 # ClaimsPlus
 
-**Get the plugin jar, setup help, and updates in the SQWARE Discord: [discord.sqware.gg](https://discord.sqware.gg).**
+**Join the SQWARE Discord: [discord.sqware.gg](https://discord.sqware.gg).**
 
 ClaimsPlus is a GriefPrevention-style land claim plugin for Paper servers. Players place an emerald block to create a protected 32x32 claim, then manage trust with simple commands.
 
