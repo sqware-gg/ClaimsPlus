@@ -1,5 +1,7 @@
 # ClaimsPlus
 
+**Get the plugin jar, setup help, and updates in the SQWARE Discord: [discord.sqware.gg](https://discord.sqware.gg).**
+
 ClaimsPlus is a GriefPrevention-style land claim plugin for Paper servers. Players place an emerald block to create a protected 32x32 claim, then manage trust with simple commands.
 
 Use it when you want Minecraft land protection that is easier to explain than region tools and lighter than complex claim systems.
@@ -73,9 +75,6 @@ claimsplus.bypass  - bypass protection and anchor ownership
 
 The jar is written to `target/ClaimsPlus-0.1.0.jar`.
 
-## Support
-
-- Website: https://sqware.gg
-- Discord: https://discord.sqware.gg
+## License
 
 ClaimsPlus is licensed under the Apache License, Version 2.0.
