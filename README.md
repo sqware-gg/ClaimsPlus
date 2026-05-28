@@ -1,36 +1,81 @@
 # ClaimsPlus
 
-ClaimsPlus protects land with emerald blocks.
+ClaimsPlus is a GriefPrevention-style land claim plugin for Paper servers. Players place an emerald block to create a protected 32x32 claim, then manage trust with simple commands.
+
+Use it when you want Minecraft land protection that is easier to explain than region tools and lighter than complex claim systems.
+
+## Features
+
+- Emerald block claim anchors.
+- 32x32 claims from world bottom to world top.
+- Owner-only anchor breaking.
+- Build, access, container, and permission trust levels.
+- Public trust support for shared farms, doors, or containers.
+- Temporary client-side claim border preview.
+- Protection for common bypasses: explosions, pistons, fluid flow, hoppers, containers, dispensers, sponge absorption, tree growth, item frames, armor stands, vehicles, mobs, villagers, shearing, leashing, and buckets.
+- Claim data saved in `plugins/ClaimsPlus/claims.yml`.
+
+## Requirements
+
+- Paper `26.1.2+`
+- Java `25+`
+- Maven wrapper included
 
 ## Claiming
 
-Place an emerald block to create a 32x32 claim around that block. The claim protects the whole vertical column from the bottom of the world to the top.
+Place an emerald block to create a claim. The emerald block is the anchor. Breaking the anchor removes the claim, but only the owner or a player with `claimsplus.bypass` can break it.
 
-The emerald block is the claim anchor. Breaking the anchor removes the claim, but only the owner or a player with `claimsplus.bypass` can break it.
-
-When a claim is created, ClaimsPlus briefly shows the owner a client-side fake block border. It defaults to glowstone and can be changed under `visual-border` in `config.yml`. No real blocks are placed.
-
-Sounds are configurable under `feedback.sounds`. Protection denial feedback is throttled by `feedback.protected-cooldown-millis` so repeated blocked clicks do not flood chat or audio.
+When a claim is created, the owner briefly sees a fake block border. No real border blocks are placed.
 
 ## Commands
 
-- `/trust <player>` - give build trust. This includes block editing, container trust, and access trust.
-- `/accesstrust <player>` - let a player use doors, buttons, levers, beds, and similar access blocks.
-- `/containertrust <player>` - let a player use inventories, animals, villagers, vehicles, and item drops.
-- `/permissiontrust <player>` - let a player manage trust in the claim.
-- `/untrust <player>` - remove trust from the claim you are standing in.
+```text
+/trust <player>
+/accesstrust <player>
+/containertrust <player>
+/permissiontrust <player>
+/untrust <player>
+/trustlist
+/claiminfo
+/claimshow
+/claims
+/claims info
+/claims show
+/claims status
+/claims deletehere
+/claims delete <id>
+/claims reload
+/claims save
+```
 
 Use `public` instead of a player name with `/trust`, `/accesstrust`, or `/containertrust` to grant that tier to everyone.
 
-Online players are notified in chat when another player grants or removes their trust.
-- `/trustlist` - list trusted players in the claim you are standing in.
-- `/claims` - list your claims.
-- `/claims info` - view the claim at your location.
-- `/claims show` - temporarily show the border for the claim you are standing in.
-- `/claims status|deletehere|delete <id>|reload|save` - admin controls.
+Aliases: `/at`, `/ct`, `/pt`, `/claimborder`, `/showclaim`, `/claim`
 
-## Protection Coverage
+## Permissions
 
-ClaimsPlus blocks normal building and common bypasses, including explosions, pistons, fluid flow across claim borders, hoppers across claim borders, container access, dispenser placement, sponge absorption, tree growth across borders, item frames, armor stands, vehicles, passive mobs, villagers, shearing, leashing, and bucket use.
+```text
+claimsplus.create  - create claims
+claimsplus.trust   - manage trust in owned claims
+claimsplus.info    - view claim info and own claims
+claimsplus.admin   - admin commands
+claimsplus.reload  - reload config
+claimsplus.save    - save data
+claimsplus.delete  - delete claims
+claimsplus.bypass  - bypass protection and anchor ownership
+```
 
-Configuration lives in `plugins/ClaimsPlus/config.yml`; claim data is saved in `plugins/ClaimsPlus/claims.yml`.
+## Build
+
+```powershell
+.\mvnw.cmd package
+```
+
+The jar is written to `target/ClaimsPlus-0.1.0.jar`.
+
+## Support
+
+- Website: https://sqware.gg
+- Discord: https://discord.sqware.gg
+
+ClaimsPlus is licensed under the Apache License, Version 2.0.
