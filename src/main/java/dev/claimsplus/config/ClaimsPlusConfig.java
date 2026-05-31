@@ -15,7 +15,7 @@ public final class ClaimsPlusConfig {
     private Material claimBlock;
     private int claimSize;
     private int maxClaimsPerPlayer;
-    private boolean preventOverlap;
+    private boolean expandNearbyOwnedClaims;
     private Set<String> disabledWorlds;
     private int saveIntervalSeconds;
     private boolean saveOnChange;
@@ -33,6 +33,10 @@ public final class ClaimsPlusConfig {
     private int visualBorderDurationSeconds;
     private int visualBorderHeightOffset;
     private int visualBorderLayers;
+    private boolean claimPreviewEnabled;
+    private int claimPreviewRangeBlocks;
+    private int claimPreviewRefreshTicks;
+    private int claimPreviewDurationTicks;
     private boolean feedbackSoundsEnabled;
     private float feedbackSoundVolume;
     private float feedbackSoundPitch;
@@ -58,7 +62,7 @@ public final class ClaimsPlusConfig {
         }
         claimSize = Math.max(1, plugin.getConfig().getInt("claims.size", 32));
         maxClaimsPerPlayer = plugin.getConfig().getInt("claims.max-claims-per-player", -1);
-        preventOverlap = plugin.getConfig().getBoolean("claims.prevent-overlap", true);
+        expandNearbyOwnedClaims = plugin.getConfig().getBoolean("claims.expand-nearby-owned-claims", true);
         disabledWorlds = new HashSet<>();
         for (String world : plugin.getConfig().getStringList("claims.disabled-worlds")) {
             if (world != null && !world.isBlank()) {
@@ -84,6 +88,10 @@ public final class ClaimsPlusConfig {
         visualBorderDurationSeconds = Math.max(1, plugin.getConfig().getInt("visual-border.duration-seconds", 8));
         visualBorderHeightOffset = plugin.getConfig().getInt("visual-border.height-offset", 1);
         visualBorderLayers = Math.max(1, Math.min(8, plugin.getConfig().getInt("visual-border.layers", 1)));
+        claimPreviewEnabled = plugin.getConfig().getBoolean("visual-border.placement-preview.enabled", true);
+        claimPreviewRangeBlocks = Math.max(1, plugin.getConfig().getInt("visual-border.placement-preview.range-blocks", 6));
+        claimPreviewRefreshTicks = Math.max(1, plugin.getConfig().getInt("visual-border.placement-preview.refresh-ticks", 10));
+        claimPreviewDurationTicks = Math.max(1, plugin.getConfig().getInt("visual-border.placement-preview.duration-ticks", 14));
         feedbackSoundsEnabled = plugin.getConfig().getBoolean("feedback.sounds.enabled", true);
         feedbackSoundVolume = (float) Math.max(0.0D, plugin.getConfig().getDouble("feedback.sounds.volume", 0.65D));
         feedbackSoundPitch = (float) Math.max(0.0D, plugin.getConfig().getDouble("feedback.sounds.pitch", 1.0D));
@@ -109,8 +117,8 @@ public final class ClaimsPlusConfig {
         return maxClaimsPerPlayer;
     }
 
-    public boolean preventOverlap() {
-        return preventOverlap;
+    public boolean expandNearbyOwnedClaims() {
+        return expandNearbyOwnedClaims;
     }
 
     public boolean worldEnabled(World world) {
@@ -181,6 +189,22 @@ public final class ClaimsPlusConfig {
         return visualBorderLayers;
     }
 
+    public boolean claimPreviewEnabled() {
+        return claimPreviewEnabled;
+    }
+
+    public int claimPreviewRangeBlocks() {
+        return claimPreviewRangeBlocks;
+    }
+
+    public int claimPreviewRefreshTicks() {
+        return claimPreviewRefreshTicks;
+    }
+
+    public int claimPreviewDurationTicks() {
+        return claimPreviewDurationTicks;
+    }
+
     public boolean feedbackSoundsEnabled() {
         return feedbackSoundsEnabled;
     }
@@ -200,14 +224,15 @@ public final class ClaimsPlusConfig {
     public Sound feedbackSound(String messageKey) {
         return switch (messageKey) {
             case "protected" -> feedbackProtectedSound;
-            case "claim-created" -> feedbackClaimCreatedSound;
+            case "claim-created", "claim-expanded" -> feedbackClaimCreatedSound;
             case "claim-removed" -> feedbackClaimRemovedSound;
             case "trusted", "untrusted", "trusted-target", "untrusted-target" -> feedbackTrustSound;
-            case "claim-border-shown" -> feedbackBorderSound;
+            case "claim-border-shown", "claim-expand-hint" -> feedbackBorderSound;
             case "no-permission", "players-only", "player-not-found", "not-in-claim", "not-claim-owner",
                  "trusted-self", "public-permission-trust-disabled", "already-trusted", "not-trusted",
                  "claim-overlaps", "claim-not-found", "claim-limit", "claims-disabled-world",
-                 "claim-block-required", "anchor-owner-only", "trust-help" -> feedbackErrorSound;
+                 "claim-block-required", "claim-already-owned",
+                 "anchor-owner-only", "trust-help" -> feedbackErrorSound;
             default -> messageKey.startsWith("usage-") ? feedbackErrorSound : feedbackSuccessSound;
         };
     }

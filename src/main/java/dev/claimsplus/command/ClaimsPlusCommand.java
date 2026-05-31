@@ -40,6 +40,7 @@ public final class ClaimsPlusCommand implements CommandExecutor, TabCompleter {
                 service.send(sender, "status", Map.of(
                         "version", plugin.getPluginMeta().getVersion(),
                         "claims", Integer.toString(service.claimCount()),
+                        "groups", Integer.toString(service.groupCount()),
                         "size", Integer.toString(service.config().claimSize())
                 ));
             }
@@ -75,7 +76,7 @@ public final class ClaimsPlusCommand implements CommandExecutor, TabCompleter {
             service.send(player, "no-permission", Map.of());
             return;
         }
-        List<Claim> claims = service.claimsForOwner(player.getUniqueId());
+        List<Claim> claims = service.claimGroupsForOwner(player.getUniqueId());
         if (claims.isEmpty()) {
             service.send(player, "claims-empty", Map.of());
             return;

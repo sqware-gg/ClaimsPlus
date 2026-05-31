@@ -8,10 +8,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.Deque;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -57,11 +61,19 @@ public final class ClaimDataStore {
             }
             readClaim(key, claimSection).ifPresent(claim -> claims.put(claim.id(), claim));
         }
+        repairDisconnectedGroups();
         rebuildIndexes();
     }
 
     public synchronized int claimCount() {
         return claims.size();
+    }
+
+    public synchronized int groupCount() {
+        return (int) claims.values().stream()
+                .map(this::groupKey)
+                .distinct()
+                .count();
     }
 
     public synchronized Collection<Claim> claims() {
@@ -72,6 +84,50 @@ public final class ClaimDataStore {
         return claims.values().stream()
                 .filter(claim -> claim.isOwner(owner))
                 .toList();
+    }
+
+    public synchronized List<Claim> claimGroupsForOwner(UUID owner) {
+        Map<GroupKey, Claim> groups = new LinkedHashMap<>();
+        for (Claim claim : claims.values()) {
+            if (!claim.isOwner(owner)) {
+                continue;
+            }
+            groups.compute(groupKey(claim), (ignored, current) -> earliest(current, claim));
+        }
+        return groups.values().stream()
+                .sorted(Comparator.comparing(Claim::ownerName)
+                        .thenComparing(claim -> claim.anchor().world())
+                        .thenComparingInt(claim -> claim.anchor().x())
+                        .thenComparingInt(claim -> claim.anchor().z()))
+                .toList();
+    }
+
+    public synchronized List<Claim> claimsInGroup(Claim source) {
+        if (source == null) {
+            return List.of();
+        }
+        return claims.values().stream()
+                .filter(claim -> sameGroup(source, claim))
+                .sorted(Comparator.comparingLong(Claim::createdAt)
+                        .thenComparing(Claim::id))
+                .toList();
+    }
+
+    public synchronized int claimCountInGroup(Claim source) {
+        int count = 0;
+        for (Claim claim : claims.values()) {
+            if (sameGroup(source, claim)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public synchronized boolean sameGroup(Claim first, Claim second) {
+        if (first == null || second == null) {
+            return false;
+        }
+        return groupKey(first).equals(groupKey(second));
     }
 
     public synchronized int claimCountForOwner(UUID owner) {
@@ -155,8 +211,10 @@ public final class ClaimDataStore {
     }
 
     public synchronized boolean removeClaim(String id) {
-        boolean removed = claims.remove(id) != null;
+        Claim removedClaim = claims.remove(id);
+        boolean removed = removedClaim != null;
         if (removed) {
+            splitDisconnectedGroup(removedClaim);
             rebuildIndexes();
         }
         return removed;
@@ -167,6 +225,7 @@ public final class ClaimDataStore {
         for (Claim claim : claims.values()) {
             String path = "claims." + claim.id();
             yaml.set(path + ".world", claim.anchor().world());
+            yaml.set(path + ".group-id", claim.groupId());
             yaml.set(path + ".anchor.x", claim.anchor().x());
             yaml.set(path + ".anchor.y", claim.anchor().y());
             yaml.set(path + ".anchor.z", claim.anchor().z());
@@ -237,6 +296,7 @@ public final class ClaimDataStore {
             Map<UUID, TrustEntry> trusted = readTrusted(section.getConfigurationSection("trusted"));
             return Optional.of(new Claim(
                     id,
+                    section.getString("group-id", id),
                     anchor,
                     bounds,
                     owner,
@@ -285,6 +345,93 @@ public final class ClaimDataStore {
         return types;
     }
 
+    private void splitDisconnectedGroup(Claim removedClaim) {
+        List<Claim> groupClaims = claims.values().stream()
+                .filter(claim -> sameGroup(removedClaim, claim))
+                .sorted(Comparator.comparingLong(Claim::createdAt)
+                        .thenComparing(Claim::id))
+                .toList();
+        splitDisconnectedClaims(groupClaims, removedClaim.groupId());
+    }
+
+    private void repairDisconnectedGroups() {
+        Map<GroupKey, List<Claim>> groups = new LinkedHashMap<>();
+        for (Claim claim : claims.values()) {
+            groups.computeIfAbsent(groupKey(claim), ignored -> new ArrayList<>()).add(claim);
+        }
+        for (List<Claim> groupClaims : groups.values()) {
+            groupClaims.sort(Comparator.comparingLong(Claim::createdAt)
+                    .thenComparing(Claim::id));
+            splitDisconnectedClaims(groupClaims, groupClaims.getFirst().groupId());
+        }
+    }
+
+    private void splitDisconnectedClaims(List<Claim> groupClaims, String groupId) {
+        if (groupClaims.size() <= 1) {
+            return;
+        }
+        List<List<Claim>> components = connectedComponents(groupClaims);
+        if (components.size() <= 1) {
+            return;
+        }
+        for (int i = 0; i < components.size(); i++) {
+            List<Claim> component = components.get(i);
+            String componentGroupId = i == 0 ? groupId : component.getFirst().id();
+            for (Claim claim : component) {
+                claim.setGroupId(componentGroupId);
+            }
+        }
+    }
+
+    private List<List<Claim>> connectedComponents(List<Claim> groupClaims) {
+        Set<String> remaining = new HashSet<>();
+        Map<String, Claim> byId = new HashMap<>();
+        for (Claim claim : groupClaims) {
+            remaining.add(claim.id());
+            byId.put(claim.id(), claim);
+        }
+        List<List<Claim>> components = new ArrayList<>();
+        while (!remaining.isEmpty()) {
+            String first = remaining.iterator().next();
+            List<Claim> component = new ArrayList<>();
+            Deque<Claim> queue = new ArrayDeque<>();
+            queue.add(byId.get(first));
+            remaining.remove(first);
+            while (!queue.isEmpty()) {
+                Claim current = queue.removeFirst();
+                component.add(current);
+                List<String> connected = new ArrayList<>();
+                for (String candidateId : remaining) {
+                    Claim candidate = byId.get(candidateId);
+                    if (current.bounds().adjacentTo(candidate.bounds())) {
+                        connected.add(candidateId);
+                    }
+                }
+                for (String candidateId : connected) {
+                    remaining.remove(candidateId);
+                    queue.add(byId.get(candidateId));
+                }
+            }
+            component.sort(Comparator.comparingLong(Claim::createdAt)
+                    .thenComparing(Claim::id));
+            components.add(component);
+        }
+        components.sort(Comparator.comparing((List<Claim> component) -> component.getFirst().createdAt())
+                .thenComparing(component -> component.getFirst().id()));
+        return components;
+    }
+
+    private Claim earliest(Claim current, Claim candidate) {
+        if (current == null) {
+            return candidate;
+        }
+        int created = Long.compare(candidate.createdAt(), current.createdAt());
+        if (created < 0 || (created == 0 && candidate.id().compareTo(current.id()) < 0)) {
+            return candidate;
+        }
+        return current;
+    }
+
     private void rebuildIndexes() {
         anchors.clear();
         chunkIndex.clear();
@@ -308,11 +455,18 @@ public final class ClaimDataStore {
         return world == null ? "" : world.toLowerCase(Locale.ROOT);
     }
 
+    private GroupKey groupKey(Claim claim) {
+        return new GroupKey(claim.owner(), normalizeWorld(claim.bounds().world()), claim.groupId());
+    }
+
     private void moveIntoPlace(Path temp, Path target) throws IOException {
         try {
             Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (AtomicMoveNotSupportedException e) {
             Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
         }
+    }
+
+    private record GroupKey(UUID owner, String world, String groupId) {
     }
 }

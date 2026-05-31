@@ -11,6 +11,7 @@ public final class Claim {
     public static final UUID PUBLIC_TRUST = new UUID(0L, 0L);
 
     private final String id;
+    private String groupId;
     private final LocationKey anchor;
     private final ClaimBounds bounds;
     private final UUID owner;
@@ -20,7 +21,13 @@ public final class Claim {
 
     public Claim(String id, LocationKey anchor, ClaimBounds bounds, UUID owner, String ownerName,
                  Map<UUID, TrustEntry> trusted, long createdAt) {
+        this(id, id, anchor, bounds, owner, ownerName, trusted, createdAt);
+    }
+
+    public Claim(String id, String groupId, LocationKey anchor, ClaimBounds bounds, UUID owner, String ownerName,
+                 Map<UUID, TrustEntry> trusted, long createdAt) {
         this.id = id;
+        this.groupId = cleanId(groupId, id);
         this.anchor = anchor;
         this.bounds = bounds;
         this.owner = owner;
@@ -31,6 +38,14 @@ public final class Claim {
 
     public String id() {
         return id;
+    }
+
+    public String groupId() {
+        return groupId;
+    }
+
+    public void setGroupId(String groupId) {
+        this.groupId = cleanId(groupId, id);
     }
 
     public LocationKey anchor() {
@@ -118,11 +133,23 @@ public final class Claim {
         return Map.copyOf(trusted);
     }
 
+    public Map<UUID, TrustEntry> copyTrusted() {
+        Map<UUID, TrustEntry> copy = new LinkedHashMap<>();
+        for (Map.Entry<UUID, TrustEntry> entry : trusted.entrySet()) {
+            copy.put(entry.getKey(), new TrustEntry(entry.getValue().name(), entry.getValue().types()));
+        }
+        return copy;
+    }
+
     public int trustedCount() {
         return trusted.size();
     }
 
     private String cleanName(String name) {
         return name == null || name.isBlank() ? "Unknown" : name;
+    }
+
+    private String cleanId(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 }

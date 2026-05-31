@@ -2,24 +2,31 @@ package dev.claimsplus.claim;
 
 import dev.claimsplus.config.ClaimsPlusConfig;
 import dev.claimsplus.util.Text;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.bukkit.Bukkit;
+import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Sound;
 import org.bukkit.SoundCategory;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.RayTraceResult;
 
 public final class ClaimService {
     private final JavaPlugin plugin;
@@ -27,7 +34,9 @@ public final class ClaimService {
     private final ClaimDataStore store;
     private final ClaimBorderVisualizer borderVisualizer;
     private final Map<UUID, Long> protectedFeedbackAt = new HashMap<>();
+    private final Map<UUID, Long> previewSuppressedUntil = new HashMap<>();
     private BukkitTask saveTask;
+    private BukkitTask previewTask;
 
     public ClaimService(JavaPlugin plugin, ClaimsPlusConfig config, ClaimDataStore store) {
         this.plugin = plugin;
@@ -38,6 +47,7 @@ public final class ClaimService {
 
     public void start() {
         scheduleSaveTask();
+        schedulePreviewTask();
     }
 
     public void stop() {
@@ -45,6 +55,12 @@ public final class ClaimService {
             saveTask.cancel();
             saveTask = null;
         }
+        if (previewTask != null) {
+            previewTask.cancel();
+            previewTask = null;
+        }
+        borderVisualizer.clearAllPreviews();
+        previewSuppressedUntil.clear();
         save();
     }
 
@@ -56,7 +72,14 @@ public final class ClaimService {
             saveTask.cancel();
             saveTask = null;
         }
+        if (previewTask != null) {
+            previewTask.cancel();
+            previewTask = null;
+        }
+        borderVisualizer.clearAllPreviews();
+        previewSuppressedUntil.clear();
         scheduleSaveTask();
+        schedulePreviewTask();
     }
 
     public boolean save() {
@@ -71,6 +94,10 @@ public final class ClaimService {
         return store.claimCount();
     }
 
+    public int groupCount() {
+        return store.groupCount();
+    }
+
     public List<Claim> claimsForOwner(UUID owner) {
         return store.claimsForOwner(owner).stream()
                 .sorted(Comparator.comparing(Claim::ownerName)
@@ -78,6 +105,10 @@ public final class ClaimService {
                         .thenComparingInt(claim -> claim.anchor().x())
                         .thenComparingInt(claim -> claim.anchor().z()))
                 .toList();
+    }
+
+    public List<Claim> claimGroupsForOwner(UUID owner) {
+        return store.claimGroupsForOwner(owner);
     }
 
     public Optional<Claim> claimAt(Location location) {
@@ -122,7 +153,10 @@ public final class ClaimService {
         if (firstClaim.isEmpty() && secondClaim.isEmpty()) {
             return false;
         }
-        return firstClaim.map(Claim::id).orElse("").equals(secondClaim.map(Claim::id).orElse("")) == false;
+        if (firstClaim.isEmpty() || secondClaim.isEmpty()) {
+            return true;
+        }
+        return !store.sameGroup(firstClaim.get(), secondClaim.get());
     }
 
     public ClaimResult createClaim(Player player, Block block) {
@@ -140,12 +174,28 @@ public final class ClaimService {
             return ClaimResult.failure("claim-limit", Map.of("limit", Integer.toString(limit)));
         }
 
-        ClaimBounds bounds = ClaimBounds.around(block.getLocation(), config.claimSize());
-        if (config.preventOverlap()) {
-            Optional<Claim> overlap = store.firstIntersecting(bounds);
-            if (overlap.isPresent()) {
-                return ClaimResult.failure("claim-overlaps", placeholders(overlap.get()));
+        Optional<Claim> current = store.claimAt(block.getWorld().getName(), block.getX(), block.getZ());
+        if (current.isPresent()) {
+            Claim claim = current.get();
+            if (!claim.isOwner(player.getUniqueId())) {
+                return ClaimResult.failure("claim-overlaps", placeholders(claim));
             }
+            if (!config.expandNearbyOwnedClaims()) {
+                return ClaimResult.failure("claim-already-owned", placeholders(claim));
+            }
+            ClaimDirection direction = ClaimDirection.fromYaw(player.getLocation().getYaw());
+            return expansionHint(player, claim, direction);
+        }
+
+        Optional<ExpansionTarget> expansion = expansionTarget(player, block);
+        if (expansion.isPresent()) {
+            return createExpansion(player, block, expansion.get());
+        }
+
+        ClaimBounds bounds = ClaimBounds.around(block.getLocation(), config.claimSize());
+        Optional<Claim> overlap = store.firstIntersecting(bounds);
+        if (overlap.isPresent()) {
+            return ClaimResult.failure("claim-overlaps", placeholders(overlap.get()));
         }
 
         LocationKey anchor = LocationKey.from(block);
@@ -161,7 +211,196 @@ public final class ClaimService {
         store.addClaim(claim);
         saveIfConfigured();
         borderVisualizer.show(player, claim);
+        suppressClaimPreview(player);
         return ClaimResult.success("claim-created", placeholders(claim));
+    }
+
+    private ClaimResult createExpansion(Player player, Block block, ExpansionTarget target) {
+        Optional<Claim> overlap = store.firstIntersecting(target.bounds());
+        if (overlap.isPresent()) {
+            return ClaimResult.failure("claim-overlaps", placeholders(overlap.get()));
+        }
+
+        Claim source = target.source();
+        Claim claim = new Claim(
+                UUID.randomUUID().toString(),
+                source.groupId(),
+                LocationKey.from(block),
+                target.bounds(),
+                source.owner(),
+                player.getName(),
+                source.copyTrusted(),
+                System.currentTimeMillis()
+        );
+        store.addClaim(claim);
+        mergeAdjacentOwnedGroups(claim);
+        saveIfConfigured();
+        borderVisualizer.show(player, store.claimsInGroup(claim));
+        suppressClaimPreview(player);
+        Map<String, String> placeholders = placeholders(claim);
+        placeholders.put("direction", target.direction().label());
+        placeholders.put("tiles", Integer.toString(store.claimCountInGroup(claim)));
+        return ClaimResult.success("claim-expanded", placeholders);
+    }
+
+    private Optional<ExpansionTarget> expansionTarget(Player player, Block block) {
+        if (!config.expandNearbyOwnedClaims()) {
+            return Optional.empty();
+        }
+        String world = block.getWorld().getName();
+        int x = block.getX();
+        int z = block.getZ();
+
+        List<ExpansionTarget> exact = new ArrayList<>();
+        ClaimDirection facing = ClaimDirection.fromYaw(player.getLocation().getYaw());
+        for (Claim claim : store.claimsForOwner(player.getUniqueId())) {
+            if (!claim.bounds().sameWorld(world)) {
+                continue;
+            }
+            for (ClaimDirection direction : ClaimDirection.values()) {
+                ClaimBounds bounds = claim.bounds().adjacent(direction);
+                if (bounds.contains(world, x, z)) {
+                    long score = (bounds.distanceSquaredToCenter(x, z) * 10L) + (direction == facing ? 0L : 1L);
+                    ExpansionTarget target = new ExpansionTarget(claim, bounds, direction, score);
+                    exact.add(target);
+                }
+            }
+        }
+        return bestTarget(exact);
+    }
+
+    private ClaimResult expansionHint(Player player, Claim source, ClaimDirection direction) {
+        ExpansionHint hint = expansionHintTarget(player, source, direction);
+        if (hint.target().isEmpty()) {
+            Claim blocker = hint.blocker().orElse(source);
+            if (blocker.isOwner(player.getUniqueId())) {
+                return ClaimResult.failure("claim-already-owned", placeholders(blocker));
+            }
+            return ClaimResult.failure("claim-overlaps", placeholders(blocker));
+        }
+
+        ClaimBounds bounds = hint.target().get().bounds();
+        borderVisualizer.preview(player, List.of(bounds));
+        Map<String, String> placeholders = placeholders(source);
+        placeholders.put("direction", direction.label());
+        return ClaimResult.failure("claim-expand-hint", placeholders);
+    }
+
+    private ExpansionHint expansionHintTarget(Player player, Claim source, ClaimDirection direction) {
+        List<ExpansionTarget> targets = new ArrayList<>();
+        Optional<Claim> blocker = Optional.empty();
+        int playerX = player.getLocation().getBlockX();
+        int playerZ = player.getLocation().getBlockZ();
+
+        for (Claim claim : store.claimsInGroup(source)) {
+            ClaimBounds bounds = claim.bounds().adjacent(direction);
+            Optional<Claim> overlap = store.firstIntersecting(bounds);
+            if (overlap.isEmpty()) {
+                long score = bounds.distanceSquaredToCenter(playerX, playerZ);
+                targets.add(new ExpansionTarget(claim, bounds, direction, score));
+                continue;
+            }
+            if (blocker.isEmpty() && !store.sameGroup(source, overlap.get())) {
+                blocker = overlap;
+            }
+        }
+        return new ExpansionHint(bestTarget(targets), blocker);
+    }
+
+    private Optional<ExpansionTarget> bestTarget(List<ExpansionTarget> targets) {
+        return targets.stream()
+                .min(Comparator.comparingLong(ExpansionTarget::score)
+                        .thenComparing(target -> target.direction().label())
+                        .thenComparing(target -> target.source().id()));
+    }
+
+    private void mergeAdjacentOwnedGroups(Claim seed) {
+        List<Claim> owned = store.claimsForOwner(seed.owner()).stream()
+                .filter(claim -> claim.bounds().sameWorld(seed.bounds().world()))
+                .toList();
+        Set<String> mergedGroups = new LinkedHashSet<>();
+        mergedGroups.add(seed.groupId());
+
+        boolean changed;
+        do {
+            changed = false;
+            for (Claim claim : owned) {
+                if (mergedGroups.contains(claim.groupId())) {
+                    continue;
+                }
+                if (touchesAnyMergedGroup(claim, owned, mergedGroups)) {
+                    mergedGroups.add(claim.groupId());
+                    changed = true;
+                }
+            }
+        } while (changed);
+
+        if (mergedGroups.size() <= 1) {
+            return;
+        }
+
+        Map<UUID, TrustEntry> trusted = mergedTrust(owned, mergedGroups);
+        for (Claim claim : owned) {
+            if (!mergedGroups.contains(claim.groupId())) {
+                continue;
+            }
+            claim.setGroupId(seed.groupId());
+            applyTrust(claim, trusted);
+        }
+    }
+
+    private boolean touchesAnyMergedGroup(Claim claim, List<Claim> owned, Set<String> mergedGroups) {
+        for (Claim merged : owned) {
+            if (mergedGroups.contains(merged.groupId()) && claim.bounds().adjacentTo(merged.bounds())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Map<UUID, TrustEntry> mergedTrust(List<Claim> claims, Set<String> groupIds) {
+        Map<UUID, TrustEntry> trusted = new LinkedHashMap<>();
+        for (Claim claim : claims) {
+            if (!groupIds.contains(claim.groupId())) {
+                continue;
+            }
+            for (Map.Entry<UUID, TrustEntry> entry : claim.trusted().entrySet()) {
+                TrustEntry merged = trusted.computeIfAbsent(
+                        entry.getKey(),
+                        ignored -> new TrustEntry(entry.getValue().name(), Set.of())
+                );
+                merged.updateName(entry.getValue().name());
+                for (TrustType type : entry.getValue().types()) {
+                    merged.grant(type);
+                }
+            }
+        }
+        return trusted;
+    }
+
+    private Map<UUID, TrustEntry> mergedTrust(List<Claim> claims) {
+        Map<UUID, TrustEntry> trusted = new LinkedHashMap<>();
+        for (Claim claim : claims) {
+            for (Map.Entry<UUID, TrustEntry> entry : claim.trusted().entrySet()) {
+                TrustEntry merged = trusted.computeIfAbsent(
+                        entry.getKey(),
+                        ignored -> new TrustEntry(entry.getValue().name(), Set.of())
+                );
+                merged.updateName(entry.getValue().name());
+                for (TrustType type : entry.getValue().types()) {
+                    merged.grant(type);
+                }
+            }
+        }
+        return trusted;
+    }
+
+    private void applyTrust(Claim claim, Map<UUID, TrustEntry> trusted) {
+        for (Map.Entry<UUID, TrustEntry> entry : trusted.entrySet()) {
+            for (TrustType type : entry.getValue().types()) {
+                claim.grantTrust(entry.getKey(), entry.getValue().name(), type);
+            }
+        }
     }
 
     public ClaimResult removeClaim(Player player, Claim claim) {
@@ -188,8 +427,121 @@ public final class ClaimService {
             return ClaimResult.failure("not-in-claim", Map.of());
         }
         Claim claim = current.get();
-        borderVisualizer.show(player, claim);
+        borderVisualizer.show(player, store.claimsInGroup(claim));
+        suppressClaimPreview(player);
         return ClaimResult.success("claim-border-shown", placeholders(claim));
+    }
+
+    public void previewClaimPlacement(Player player) {
+        if (!canPreviewClaimPlacement(player)) {
+            borderVisualizer.clearPreview(player);
+            return;
+        }
+
+        Optional<Block> target = targetedPlacementBlock(player);
+        if (target.isEmpty()) {
+            borderVisualizer.clearPreview(player);
+            return;
+        }
+
+        Optional<ClaimBounds> bounds = previewBounds(player, target.get());
+        if (bounds.isEmpty()) {
+            borderVisualizer.clearPreview(player);
+            return;
+        }
+        borderVisualizer.preview(player, List.of(bounds.get()));
+    }
+
+    private boolean canPreviewClaimPlacement(Player player) {
+        return config.claimPreviewEnabled()
+                && player != null
+                && player.isOnline()
+                && player.hasPermission("claimsplus.create")
+                && !previewSuppressed(player)
+                && holdsClaimBlock(player);
+    }
+
+    private boolean previewSuppressed(Player player) {
+        long until = previewSuppressedUntil.getOrDefault(player.getUniqueId(), 0L);
+        if (System.currentTimeMillis() < until) {
+            return true;
+        }
+        previewSuppressedUntil.remove(player.getUniqueId());
+        return false;
+    }
+
+    private void suppressClaimPreview(Player player) {
+        if (!config.claimPreviewEnabled()) {
+            return;
+        }
+        long durationMillis = Math.max(1L, config.visualBorderDurationSeconds()) * 1000L;
+        previewSuppressedUntil.put(player.getUniqueId(), System.currentTimeMillis() + durationMillis);
+    }
+
+    private boolean holdsClaimBlock(Player player) {
+        return isClaimBlock(player.getInventory().getItemInMainHand())
+                || isClaimBlock(player.getInventory().getItemInOffHand());
+    }
+
+    private boolean isClaimBlock(ItemStack item) {
+        return item != null && item.getType() == config.claimBlock();
+    }
+
+    private Optional<Block> targetedPlacementBlock(Player player) {
+        RayTraceResult result = player.getWorld().rayTraceBlocks(
+                player.getEyeLocation(),
+                player.getEyeLocation().getDirection(),
+                config.claimPreviewRangeBlocks(),
+                FluidCollisionMode.NEVER,
+                true
+        );
+        if (result == null || result.getHitBlock() == null) {
+            return Optional.empty();
+        }
+        BlockFace face = result.getHitBlockFace();
+        if (face == null || face == BlockFace.SELF) {
+            return Optional.empty();
+        }
+        Block target = result.getHitBlock().getRelative(face);
+        if (!target.getType().isAir()) {
+            return Optional.empty();
+        }
+        return Optional.of(target);
+    }
+
+    private Optional<ClaimBounds> previewBounds(Player player, Block block) {
+        if (!config.worldEnabled(block.getWorld())) {
+            return Optional.empty();
+        }
+        int limit = config.maxClaimsPerPlayer();
+        if (limit >= 0 && store.claimCountForOwner(player.getUniqueId()) >= limit) {
+            return Optional.empty();
+        }
+
+        Optional<Claim> current = store.claimAt(block.getWorld().getName(), block.getX(), block.getZ());
+        if (current.isPresent()) {
+            Claim claim = current.get();
+            if (!claim.isOwner(player.getUniqueId()) || !config.expandNearbyOwnedClaims()) {
+                return Optional.empty();
+            }
+            ClaimDirection direction = ClaimDirection.fromYaw(player.getLocation().getYaw());
+            return expansionHintTarget(player, claim, direction)
+                    .target()
+                    .map(ExpansionTarget::bounds);
+        }
+
+        Optional<ExpansionTarget> expansion = expansionTarget(player, block);
+        if (expansion.isPresent()) {
+            ClaimBounds bounds = expansion.get().bounds();
+            return store.firstIntersecting(bounds).isPresent() ? Optional.empty() : Optional.of(bounds);
+        }
+
+        ClaimBounds bounds = ClaimBounds.around(block.getLocation(), config.claimSize());
+        return intersectsExistingClaim(bounds) ? Optional.empty() : Optional.of(bounds);
+    }
+
+    private boolean intersectsExistingClaim(ClaimBounds bounds) {
+        return store.firstIntersecting(bounds).isPresent();
     }
 
     public ClaimResult trust(Player player, String targetName, TrustType type) {
@@ -216,7 +568,11 @@ public final class ClaimService {
         if (claim.isOwner(target.uuid())) {
             return ClaimResult.failure("trusted-self", Map.of("player", target.name()));
         }
-        if (!claim.grantTrust(target.uuid(), target.name(), type)) {
+        boolean changed = false;
+        for (Claim groupClaim : store.claimsInGroup(claim)) {
+            changed = groupClaim.grantTrust(target.uuid(), target.name(), type) || changed;
+        }
+        if (!changed) {
             return ClaimResult.failure("already-trusted", Map.of(
                     "player", target.name(),
                     "type", type.label(),
@@ -250,7 +606,11 @@ public final class ClaimService {
         if (target == null) {
             return ClaimResult.failure("player-not-found", Map.of());
         }
-        if (!claim.removeTrusted(target.uuid())) {
+        boolean changed = false;
+        for (Claim groupClaim : store.claimsInGroup(claim)) {
+            changed = groupClaim.removeTrusted(target.uuid()) || changed;
+        }
+        if (!changed) {
             return ClaimResult.failure("not-trusted", Map.of("player", target.name()));
         }
         saveIfConfigured();
@@ -259,16 +619,31 @@ public final class ClaimService {
     }
 
     public String trustedNames(Claim claim) {
-        return claim.trusted().values().stream()
-                .map(TrustEntry::name)
+        return trustedNames(mergedTrust(store.claimsInGroup(claim)).values());
+    }
+
+    private String trustedNames(Iterable<TrustEntry> trusted) {
+        List<String> names = new ArrayList<>();
+        for (TrustEntry entry : trusted) {
+            names.add(entry.name());
+        }
+        return names.stream()
                 .sorted(String.CASE_INSENSITIVE_ORDER)
                 .collect(Collectors.joining(", "));
     }
 
     public String trustedNames(Claim claim, TrustType type) {
-        return claim.trusted().values().stream()
-                .filter(entry -> entry.types().contains(type))
-                .map(TrustEntry::name)
+        return trustedNames(mergedTrust(store.claimsInGroup(claim)).values(), type);
+    }
+
+    private String trustedNames(Iterable<TrustEntry> trusted, TrustType type) {
+        List<String> names = new ArrayList<>();
+        for (TrustEntry entry : trusted) {
+            if (entry.types().contains(type)) {
+                names.add(entry.name());
+            }
+        }
+        return names.stream()
                 .sorted(String.CASE_INSENSITIVE_ORDER)
                 .collect(Collectors.joining(", "));
     }
@@ -296,8 +671,16 @@ public final class ClaimService {
     }
 
     public Map<String, String> placeholders(Claim claim) {
+        List<Claim> groupClaims = store.claimsInGroup(claim);
+        if (groupClaims.isEmpty()) {
+            groupClaims = List.of(claim);
+        }
+        ClaimBounds groupBounds = groupBounds(claim, groupClaims);
+        Map<UUID, TrustEntry> trusted = mergedTrust(groupClaims);
         Map<String, String> placeholders = new LinkedHashMap<>();
         placeholders.put("id", claim.id());
+        placeholders.put("group-id", claim.groupId());
+        placeholders.put("tiles", Integer.toString(groupClaims.isEmpty() ? 1 : groupClaims.size()));
         placeholders.put("owner", claim.ownerName());
         placeholders.put("world", claim.anchor().world());
         placeholders.put("x", Integer.toString(claim.anchor().x()));
@@ -307,13 +690,36 @@ public final class ClaimService {
         placeholders.put("max-x", Integer.toString(claim.bounds().maxX()));
         placeholders.put("min-z", Integer.toString(claim.bounds().minZ()));
         placeholders.put("max-z", Integer.toString(claim.bounds().maxZ()));
-        placeholders.put("trusted-count", Integer.toString(claim.trustedCount()));
-        placeholders.put("trusted", trustedNames(claim));
-        placeholders.put("access-trusted", trustedNames(claim, TrustType.ACCESS));
-        placeholders.put("container-trusted", trustedNames(claim, TrustType.CONTAINER));
-        placeholders.put("build-trusted", trustedNames(claim, TrustType.BUILD));
-        placeholders.put("permission-trusted", trustedNames(claim, TrustType.PERMISSION));
+        placeholders.put("group-min-x", Integer.toString(groupBounds.minX()));
+        placeholders.put("group-max-x", Integer.toString(groupBounds.maxX()));
+        placeholders.put("group-min-z", Integer.toString(groupBounds.minZ()));
+        placeholders.put("group-max-z", Integer.toString(groupBounds.maxZ()));
+        placeholders.put("trusted-count", Integer.toString(trusted.size()));
+        placeholders.put("trusted", trustedNames(trusted.values()));
+        placeholders.put("access-trusted", trustedNames(trusted.values(), TrustType.ACCESS));
+        placeholders.put("container-trusted", trustedNames(trusted.values(), TrustType.CONTAINER));
+        placeholders.put("build-trusted", trustedNames(trusted.values(), TrustType.BUILD));
+        placeholders.put("permission-trusted", trustedNames(trusted.values(), TrustType.PERMISSION));
         return placeholders;
+    }
+
+    private ClaimBounds groupBounds(Claim fallback, List<Claim> groupClaims) {
+        ClaimBounds bounds = fallback.bounds();
+        int minX = bounds.minX();
+        int maxX = bounds.maxX();
+        int minZ = bounds.minZ();
+        int maxZ = bounds.maxZ();
+        for (Claim claim : groupClaims) {
+            ClaimBounds candidate = claim.bounds();
+            if (!candidate.sameWorld(bounds.world())) {
+                continue;
+            }
+            minX = Math.min(minX, candidate.minX());
+            maxX = Math.max(maxX, candidate.maxX());
+            minZ = Math.min(minZ, candidate.minZ());
+            maxZ = Math.max(maxZ, candidate.maxZ());
+        }
+        return new ClaimBounds(bounds.world(), minX, maxX, minZ, maxZ);
     }
 
     private void scheduleSaveTask() {
@@ -323,6 +729,24 @@ public final class ClaimService {
         }
         long ticks = interval * 20L;
         saveTask = Bukkit.getScheduler().runTaskTimer(plugin, this::save, ticks, ticks);
+    }
+
+    private void schedulePreviewTask() {
+        if (!config.claimPreviewEnabled()) {
+            return;
+        }
+        long ticks = Math.max(1L, config.claimPreviewRefreshTicks());
+        previewTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            cleanupExpiredPreviewSuppressions();
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                previewClaimPlacement(player);
+            }
+        }, ticks, ticks);
+    }
+
+    private void cleanupExpiredPreviewSuppressions() {
+        long now = System.currentTimeMillis();
+        previewSuppressedUntil.entrySet().removeIf(entry -> entry.getValue() <= now);
     }
 
     private void saveIfConfigured() {
@@ -391,6 +815,12 @@ public final class ClaimService {
         }
         String name = offline.getName() == null ? input : offline.getName();
         return new PlayerLookup(offline.getUniqueId(), name);
+    }
+
+    private record ExpansionTarget(Claim source, ClaimBounds bounds, ClaimDirection direction, long score) {
+    }
+
+    private record ExpansionHint(Optional<ExpansionTarget> target, Optional<Claim> blocker) {
     }
 
     private record PlayerLookup(UUID uuid, String name) {

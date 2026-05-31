@@ -9,11 +9,13 @@ Use it when you want Minecraft land protection that is easier to explain than re
 ## Features
 
 - Emerald block claim anchors.
-- 32x32 claims from world bottom to world top.
+- 32x32 claim tiles from world bottom to world top.
+- Connected claim expansion by placing an emerald block in an unclaimed tile directly beside one of your claims.
 - Owner-only anchor breaking.
 - Build, access, container, and permission trust levels.
 - Public trust support for shared farms, doors, or containers.
 - Temporary client-side claim border preview.
+- Placement preview while holding the claim block.
 - Protection for common bypasses: explosions, pistons, fluid flow, hoppers, containers, dispensers, sponge absorption, tree growth, item frames, armor stands, vehicles, mobs, villagers, shearing, leashing, and buckets.
 - Claim data saved in `plugins/ClaimsPlus/claims.yml`.
 
@@ -25,9 +27,11 @@ Use it when you want Minecraft land protection that is easier to explain than re
 
 ## Claiming
 
-Place an emerald block to create a claim. The emerald block is the anchor. Breaking the anchor removes the claim, but only the owner or a player with `claimsplus.bypass` can break it.
+Place an emerald block to create a claim. The emerald block is the anchor. Breaking the anchor removes that claim tile, but only the owner or a player with `claimsplus.bypass` can break it.
 
-When a claim is created, the owner briefly sees a fake block border. No real border blocks are placed.
+To expand a claim, place another emerald block anywhere in the next unclaimed tile directly north, east, south, or west of one of your existing claim tiles. If a player tries placing inside their own claim, ClaimsPlus cancels the placement and highlights the nearest available tile in the direction they are facing. Expansion tiles use the size of the tile they connect to and cannot overlap any existing claim. Trust applies to the whole connected group.
+
+While holding an emerald block, players see a temporary border for the claim tile that would be created at the block they are targeting. When a claim is created or expanded, the owner briefly sees a fake block border. No real border blocks are placed.
 
 ## Commands
 

@@ -26,6 +26,7 @@ ClaimsPlus does not implement a full flag engine, but it now applies the same id
 ClaimsPlus remains an emerald-block claim plugin:
 
 - Claims are fixed 32x32 columns by default.
+- Adjacent owned columns can be connected into one claim group by placing the claim block in the next tile.
 - No subdivisions, economy, claim-block accrual, GUI flag editor, or LuckPerms-backed flags.
 - The config exposes broad protection categories instead of hundreds of flag definitions.
 

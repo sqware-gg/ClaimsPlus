@@ -20,15 +20,15 @@ commands:
     aliases:
       - ct
   permissiontrust:
-    description: Let a player manage trust in the claim.
+    description: Let a player manage trust in the claim group.
     usage: /permissiontrust <player>
     aliases:
       - pt
   untrust:
-    description: Remove all of a player's trust from the claim you are standing in.
+    description: Remove all of a player's trust from the claim group you are standing in.
     usage: /untrust <player>
   trustlist:
-    description: View trusted players in the claim you are standing in.
+    description: View trusted players in the claim group you are standing in.
     usage: /trustlist
   claiminfo:
     description: View claim information for your current location.

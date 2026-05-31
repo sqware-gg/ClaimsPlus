@@ -26,7 +26,7 @@ public final class ClaimListCommand implements CommandExecutor {
             service.send(player, "no-permission", Map.of());
             return true;
         }
-        List<Claim> claims = service.claimsForOwner(player.getUniqueId());
+        List<Claim> claims = service.claimGroupsForOwner(player.getUniqueId());
         if (claims.isEmpty()) {
             service.send(player, "claims-empty", Map.of());
             return true;

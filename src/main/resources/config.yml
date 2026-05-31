@@ -1,20 +1,27 @@
 # ClaimsPlus
 # Used for update checks.
 # Do not change unless you know what you are doing.
-config-version: 8
+config-version: 10
 
 claims:
   # Placing this block creates a claim.
   claim-block: EMERALD_BLOCK
 
   # The protected square width and length. A value of 32 protects a 32x32 column.
+  # Existing claims keep their saved bounds if this value changes later.
   size: 32
 
   # -1 means unlimited claims per player.
   max-claims-per-player: -1
 
-  # Prevents new emerald block claims from overlapping existing claims.
-  prevent-overlap: true
+  # ClaimsPlus always rejects overlapping claims. This is a safety rule and cannot
+  # be disabled from config.
+
+  # When true, placing the claim block in an unclaimed tile directly beside one
+  # of your claims expands that connected claim group instead of creating a
+  # separate centered claim. Expansion tiles use the actual size of the claim
+  # tile they connect to, so old saved claims remain consistent after size changes.
+  expand-nearby-owned-claims: true
 
   # Worlds listed here cannot create claims and are not protected by this plugin.
   disabled-worlds: []
@@ -50,11 +57,25 @@ visual-border:
 
   duration-seconds: 8
 
-  # Relative to the emerald block Y level. 1 draws the border just above the claim block height.
+  # Relative to the player's Y level. 1 draws the border just above the player's feet.
   height-offset: 1
 
   # Vertical fake-block layers to draw. Keep this low; 1 or 2 is usually enough.
   layers: 1
+
+  placement-preview:
+    # While holding the claim block, previews the tile that would be created using
+    # client-side fake blocks. This does not place or reserve land.
+    enabled: true
+
+    # How far ahead the player can look to preview claim block placement.
+    range-blocks: 6
+
+    # How often the preview follows the player's target block.
+    refresh-ticks: 10
+
+    # Keep this a little higher than refresh-ticks so the preview does not flicker.
+    duration-ticks: 14
 
 feedback:
   # Prevents chat/sound spam when a player repeatedly tries blocked actions.
@@ -93,29 +114,32 @@ messages:
   not-claim-owner: "&#ED4245Only the claim owner can do that."
   trusted-self: "&#ED4245You already own this claim."
   public-permission-trust-disabled: "&#ED4245Permission trust cannot be granted to public."
-  trusted: "&f{player} &7now has &f{type} &7trust in this claim &8(&7{type-description}&8)&7."
-  trusted-target: "&f{source} &7gave you &f{type} &7trust in &f{owner}&7's claim &8(&7{type-description}&8)&7."
-  already-trusted: "&f{player} &7already has &f{type} &7trust in this claim."
-  untrusted: "&f{player} &7is no longer trusted in this claim."
-  untrusted-target: "&f{source} &7removed your trust from &f{owner}&7's claim."
+  trusted: "&f{player} &7now has &f{type} &7trust in this claim group &8(&7{type-description}&8)&7."
+  trusted-target: "&f{source} &7gave you &f{type} &7trust in &f{owner}&7's claim group &8(&7{type-description}&8)&7."
+  already-trusted: "&f{player} &7already has &f{type} &7trust in this claim group."
+  untrusted: "&f{player} &7is no longer trusted in this claim group."
+  untrusted-target: "&f{source} &7removed your trust from &f{owner}&7's claim group."
   not-trusted: "&f{player} &7is not trusted in this claim."
-  trust-list-empty: "&7No players are trusted in this claim."
+  trust-list-empty: "&7No players are trusted in this claim group."
   trust-list: "&7Build: &f{build-trusted}\n&7Container: &f{container-trusted}\n&7Access: &f{access-trusted}\n&7Permission: &f{permission-trusted}"
   protected: "&#ED4245This area is claimed by &f{owner}&#ED4245."
   anchor-owner-only: "&#ED4245Only the claim owner can break the emerald claim block."
   claim-created: "&7Claim created at &f{x}&7, &f{z}&7. Protected area: &f{min-x}&7..&f{max-x}&7, &f{min-z}&7..&f{max-z}&7."
-  claim-removed: "&7Claim removed. This land is no longer protected."
-  claim-overlaps: "&#ED4245That emerald block would overlap an existing claim owned by &f{owner}&#ED4245."
+  claim-expanded: "&7Claim expanded &f{direction}&7. Connected tiles: &f{tiles}&7."
+  claim-already-owned: "&#ED4245That location is already inside your claim."
+  claim-expand-hint: "&7Place the emerald in the shown &f{direction}&7 tile to expand. If previews are disabled, use the next unclaimed tile that way."
+  claim-removed: "&7Claim tile removed. That land is no longer protected."
+  claim-overlaps: "&#ED4245That claim would overlap an existing claim owned by &f{owner}&#ED4245."
   claim-not-found: "&#ED4245No claim found with id &f{id}&#ED4245."
   claim-limit: "&#ED4245You have reached your claim limit of &f{limit}&#ED4245."
   claims-disabled-world: "&#ED4245Claims are disabled in this world."
   claim-block-required: "&#ED4245Only emerald blocks can create claims."
   info-unclaimed: "&7This location is unclaimed."
-  info-claimed: "&7Claim &f{id}&7. Owner: &f{owner}&7. Bounds: &f{min-x}&7..&f{max-x}&7, &f{min-z}&7..&f{max-z}&7. Trusted: &f{trusted-count}&7."
+  info-claimed: "&7Claim &f{id}&7. Owner: &f{owner}&7. Tile: &f{min-x}&7..&f{max-x}&7, &f{min-z}&7..&f{max-z}&7. Group tiles: &f{tiles}&7. Trusted: &f{trusted-count}&7."
   claim-border-shown: "&7Showing claim border for &f{owner}&7."
   claims-empty: "&7You do not own any claims."
-  claims-header: "&7Your claims: &f{count}"
-  claims-line: "&8- &f{world} &7at &f{x}&7, &f{z} &8(&7{min-x}..{max-x}, {min-z}..{max-z}&8)"
-  status: "&7Version &f{version}&7. Claims: &f{claims}&7. Claim size: &f{size}x{size}&7."
+  claims-header: "&7Your claim groups: &f{count}"
+  claims-line: "&8- &f{world} &7at &f{x}&7, &f{z} &8(&7tiles: {tiles}, group: {group-min-x}..{group-max-x}, {group-min-z}..{group-max-z}&8)"
+  status: "&7Version &f{version}&7. Claims: &f{claims}&7. Groups: &f{groups}&7. Claim size: &f{size}x{size}&7."
   saved: "&7Claims data saved."
   reloaded: "&#57F287ClaimsPlus reloaded."
